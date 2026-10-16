@@ -16,6 +16,7 @@
   "valid_roles_rejected_if_borrower_replica_is_used": 12614,
   "negative_controls": {
     "deadline_before_call": 144,
+    "footprint_past_cap": 1,
     "intervening_bridge_destination": 144,
     "intervening_bridge_source": 144,
     "same_family_disjoint_coordinates": 1,

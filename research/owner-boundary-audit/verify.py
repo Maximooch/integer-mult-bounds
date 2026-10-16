@@ -309,6 +309,15 @@ def audit():
     mutant = list(roles)
     mutant[second_index] = dict(first, helper=roles[second_index]["helper"], offset=first["offset"] + first["width"])
     rejects("same_family_disjoint_coordinates", lambda: check_roles(mutant, plan, admitted, geom, stage_pair, phases), "same-call whole-family alias")
+    # Footprint past the idle-child cap: a role whose offset+width exceeds
+    # its cap is superficially well-formed (valid helper, call, owner) but
+    # violates the width-and-footprint obligation.
+    victim = roles[0]
+    pair, side, cap = geom[victim["child"]]
+    width = plan["provider_registry"][plan["provider_calls"][victim["time"]]["provider"]]["widths"][victim["helper"]]
+    mutant = list(roles)
+    mutant[0] = dict(victim, offset=cap - width + 1)
+    rejects("footprint_past_cap", lambda: check_roles(mutant, plan, admitted, geom, stage_pair, phases), "width and footprint")
     return {
         "status": "PASS_PR626_NEXT_TOUCH_BOUNDARY_AUDIT",
         "base_commit": pins["base_commit"],

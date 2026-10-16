@@ -5,7 +5,7 @@ Offline integrity check, not a mathematical verifier or a live GitHub-state chec
 """
 from pathlib import Path
 import hashlib
-import io
+import tempfile
 import json
 import zipfile
 
@@ -18,6 +18,21 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def check_batch1047_file(item):
+    """Preserve the pinned Makefile prefix after batch1099 appends reviewed targets.
+
+    Batch1099 separately binds the entire current Makefile. Other historical
+    source files still require their original complete byte hashes.
+    """
+    current = (ROOT / item['integrated_path']).read_bytes()
+    if hashlib.sha256(current).hexdigest() == item['integrated_sha256']:
+        return
+    require(item['integrated_path'] == 'Makefile', 'Changed integrated file: ' + item['integrated_path'])
+    original = (ROOT / 'research/community-batch1099-audit/checkpoints/Makefile1047').read_bytes()
+    require(hashlib.sha256(original).hexdigest() == item['integrated_sha256'], 'Changed historical Makefile')
+    require(original.endswith(b'\n') and current.startswith(original), 'Historical Makefile content changed')
+
+
 def check_family_decision(item, decision):
     """Bind projected ledger state to its authoritative, pinned family decision."""
     fields = ('number', 'reviewed_head', 'current_head', 'disposition',
@@ -28,6 +43,17 @@ def check_family_decision(item, decision):
             require(field in item and json.dumps(item[field], sort_keys=True) ==
                     json.dumps(decision[field], sort_keys=True),
                     f'#{decision["number"]}: ledger differs from family decision: {field}')
+
+
+def check_batch1099_file(item):
+    """Authenticate the original Makefile prefix after the opt-in PR154 target."""
+    current = (ROOT / item['integrated_path']).read_bytes()
+    if hashlib.sha256(current).hexdigest() == item['integrated_sha256']:
+        return
+    require(item['integrated_path'] == 'Makefile', 'Changed integrated file: ' + item['integrated_path'])
+    original = (ROOT / 'research/community-reconciliation92-audit/checkpoints/Makefile-before154').read_bytes()
+    require(hashlib.sha256(original).hexdigest() == item['integrated_sha256'], 'Changed historical Makefile')
+    require(original.endswith(b'\n') and current.startswith(original), 'Historical Makefile content changed')
 
 
 def check_review_completion(item, decision):
@@ -48,6 +74,25 @@ def check_review_completion(item, decision):
         require(item['integration_location'], 'Incorporated without integration location')
 
 
+def check_companion_review(item, companion, decision=None):
+    """Keep scoped evidence; only a later authoritative whole-head review clears its hold."""
+    require(item['current_head'] == companion['head'] and
+            item.get('companion_reviews') == [companion],
+            'Companion review lost its parent-head binding')
+    flags = (decision or {}).get('review_completion', {})
+    if (decision and decision['reviewed_head'] == companion['head'] and
+            all(flags.get(k, False) for k in ('changed_file_coverage',
+                'scoped_mechanism_review', 'required_execution_complete'))):
+        check_family_decision(item, decision)
+        check_review_completion(item, decision)
+        return
+    require(item['unresolved_question'] == companion['remaining'],
+            'Companion review lost its remaining scope')
+    require(item['disposition'] == 'changed_since_review' and
+            item['closure'] is None and item['github_state'] == 'OPEN',
+            'Companion replay incorrectly promoted whole parent PR')
+
+
 def check_archived_files(root, records):
     """Verify the archived artifacts named by a separately pinned evidence inventory."""
     for record in records:
@@ -60,6 +105,47 @@ def check_archived_files(root, records):
                     'Changed archived replay artifact: ' + name)
 
 
+def archive_inventory(package, manifest):
+    """Check immutable ZIP pins and hash every Git blob without buffering the ZIP.
+
+    A temporary file supplies the seekability required by ZipFile. Reading each
+    member through EOF preserves ZIP CRC checks; both actual lengths and the
+    complete compressed archive SHA256 remain checked. No extraction occurs.
+    """
+    chunk_size = 1024 * 1024
+    archive = {}
+    with tempfile.TemporaryFile() as spool:
+        archive_hash = hashlib.sha256()
+        for item in manifest['parts']:
+            part_hash = hashlib.sha256()
+            size = 0
+            with (package / item['file']).open('rb') as part:
+                while chunk := part.read(chunk_size):
+                    size += len(chunk)
+                    part_hash.update(chunk)
+                    archive_hash.update(chunk)
+                    spool.write(chunk)
+            require(size == item['bytes'], 'Archive part size')
+            require(part_hash.hexdigest() == item['sha256'], 'Archive part digest')
+        require(archive_hash.hexdigest() == manifest['archive_sha256'], 'Archive digest')
+        spool.seek(0)
+        with zipfile.ZipFile(spool) as z:
+            for name in z.namelist():
+                # Name lookup deliberately retains the original duplicate-name
+                # semantics (last entry wins); the immutable ZIP pin is unchanged.
+                info = z.getinfo(name)
+                blob = hashlib.sha1(b'blob ' + str(info.file_size).encode() + b'\0')
+                size = 0
+                with z.open(name) as member:
+                    while chunk := member.read(chunk_size):
+                        size += len(chunk)
+                        blob.update(chunk)
+                require(size == info.file_size, 'Archive member size')
+                archive[name] = blob.hexdigest()
+    require(len(archive) == manifest['files'], 'Archive file count')
+    return archive
+
+
 def main():
     ledger = json.loads((ROOT / 'docs/research/pr-ledger.json').read_text())
     snapshot = json.loads((AUDIT / 'starting-snapshot.json').read_text())
@@ -70,7 +156,25 @@ def main():
                         ROOT / 'research/community-hyperplane599-audit/DISPOSITIONS.json',
                         ROOT / 'research/community-cold617-audit/DISPOSITIONS.json',
                         ROOT / 'research/community-k492-audit/DISPOSITIONS.json',
-                        ROOT / 'research/community-frontier741-audit/DISPOSITIONS.json'):
+                        ROOT / 'research/community-frontier741-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-frontier799-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-frontier890-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-batch932-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-batch952-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-batch970-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-batch1047-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-batch1099-audit/DISPOSITIONS.json',
+                        ROOT / 'research/pr-reconciliation100-20261013/DISPOSITIONS.json',
+                        ROOT / 'research/community-historical-five-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-reconciliation92-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-reconciliation-next100-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-reconciliation-third100-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-reconciliation-fourth100-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-pilot20-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-efficient100-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-efficient200-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-efficient300-audit/DISPOSITIONS.json',
+                        ROOT / 'research/community-efficient400-audit/DISPOSITIONS.json'):
         if not family_path.exists():
             continue
         family = json.loads(family_path.read_text())
@@ -98,20 +202,7 @@ def main():
         require(hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == digest, f'Stale source: {path}')
     package = ROOT / 'research/coordinated-frames-and-entrance-banks'
     manifest = json.loads((package / 'BASELINE.json').read_text())
-    parts = []
-    for item in manifest['parts']:
-        data = (package / item['file']).read_bytes()
-        require(len(data) == item['bytes'], 'Archive part size')
-        require(hashlib.sha256(data).hexdigest() == item['sha256'], 'Archive part digest')
-        parts.append(data)
-    data = b''.join(parts)
-    require(hashlib.sha256(data).hexdigest() == manifest['archive_sha256'], 'Archive digest')
-    archive = {}
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        for name in z.namelist():
-            body = z.read(name)
-            archive[name] = hashlib.sha1(b'blob ' + str(len(body)).encode() + b'\0' + body).hexdigest()
-    require(len(archive) == manifest['files'], 'Archive file count')
+    archive = archive_inventory(package, manifest)
     checks = json.loads((AUDIT / 'incorporation-checks.json').read_text())['checks']
     comparison = json.loads((AUDIT / 'content-comparison.json').read_text())
     for number, check in checks.items():
@@ -186,7 +277,7 @@ def main():
             require(len({f['path'] for f in covered['files']}) == covered['changed_files'],
                     f'#{number}: repeated changed file')
             for f in covered['files']:
-                data = (ROOT / f['path']).read_bytes()
+                data = (ROOT / f.get('integrated_path', f['path'])).read_bytes()
                 blob = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
                 require(blob == f['integrated_blob'], f'#{number}: covered bytes changed: {f["path"]}')
         closures = ROOT / 'research/community-family588-audit/CLOSURES.json'
@@ -218,7 +309,8 @@ def main():
             for decision in decisions:
                 n = decision['number']
                 require(decision['reviewed_head'] == receipt['reviewed_heads'][str(n)], 'Hyperplane reviewed head')
-                check_review_completion(actual[n], decision)
+                # A later exact-head reconciliation can supersede this immutable partial record.
+                check_review_completion(actual[n] if family_decisions[n] == decision else decision, decision)
                 c = coverage[str(n)]
                 require(c['head'] == decision['reviewed_head'] and len(c['files']) == c['changed_files'],
                         'Incomplete hyperplane changed-file inventory')
@@ -255,7 +347,8 @@ def main():
                     'Frontier741 coverage head differs')
             require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
                     'Frontier741 changed-file inventory incomplete')
-            check_review_completion(actual[number], decision)
+            # Historical partial decisions remain immutable after a later review.
+            check_review_completion(actual[number] if family_decisions[number] == decision else decision, decision)
             for item in row['files']:
                 require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
                 if item['action'] == 'pending':
@@ -266,6 +359,224 @@ def main():
                 if item['action'] != 'retained':
                     require(bool(item.get('reason')), 'Missing adaptation or remaining scope')
         print('PASS frontier741 batch: scoped source coverage, replay evidence and projection bindings')
+    receipt_path = ROOT / 'docs/research/community-frontier799-integration.json'
+    if receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        for name, digest in receipt['receipts'].items():
+            require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest,
+                    'Changed frontier799 evidence: ' + name)
+        folder = ROOT / 'research/community-frontier799-audit'
+        coverage = json.loads((folder / 'CONTENT-COVERAGE.json').read_text())['pull_requests']
+        decisions = json.loads((folder / 'DISPOSITIONS.json').read_text())['pull_requests']
+        require(set(coverage) == set(receipt['reviewed_heads']) == {str(d['number']) for d in decisions},
+                'Frontier799 review scope differs')
+        for decision in decisions:
+            number = decision['number']; row = coverage[str(number)]
+            require(row['head'] == decision['reviewed_head'] == receipt['reviewed_heads'][str(number)],
+                    'Frontier799 coverage head differs')
+            require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
+                    'Frontier799 changed-file inventory incomplete')
+            check_review_completion(actual[number], decision)
+            for item in row['files']:
+                require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
+                if item['action'] == 'pending':
+                    require(not decision['review_completion']['changed_file_coverage'], 'Incomplete review')
+                if item.get('integrated_sha256'):
+                    require(hashlib.sha256((ROOT / item['integrated_path']).read_bytes()).hexdigest()
+                            == item['integrated_sha256'], 'Changed integrated file: ' + item['integrated_path'])
+                if item['action'] != 'retained':
+                    require(bool(item.get('reason')), 'Missing scope or adaptation reason')
+        print('PASS frontier799 batch: reviewed sources, finite replays, scoped claims and closure bindings')
+    receipt_path = ROOT / 'docs/research/community-frontier890-integration.json'
+    if receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        for name, digest in receipt['receipts'].items():
+            require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest,
+                    'Changed frontier890 evidence: ' + name)
+        folder = ROOT / 'research/community-frontier890-audit'
+        coverage = json.loads((folder / 'CONTENT-COVERAGE.json').read_text())['pull_requests']
+        decisions = json.loads((folder / 'DISPOSITIONS.json').read_text())['pull_requests']
+        require(set(coverage) == set(receipt['reviewed_heads']) == {str(d['number']) for d in decisions},
+                'Frontier890 review scope differs')
+        for decision in decisions:
+            number = decision['number']; row = coverage[str(number)]
+            require(row['head'] == decision['reviewed_head'] == receipt['reviewed_heads'][str(number)],
+                    'Frontier890 coverage head differs')
+            require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
+                    'Frontier890 changed-file inventory incomplete')
+            check_review_completion(actual[number], decision)
+            for item in row['files']:
+                require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
+                if item['action'] == 'pending':
+                    require(not decision['review_completion']['changed_file_coverage'], 'Incomplete review')
+                if item.get('integrated_sha256'):
+                    require(hashlib.sha256((ROOT / item['integrated_path']).read_bytes()).hexdigest()
+                            == item['integrated_sha256'], 'Changed integrated file: ' + item['integrated_path'])
+                if item['action'] != 'retained':
+                    require(bool(item.get('reason')), 'Missing scope or adaptation reason')
+        print('PASS frontier890 batch: reviewed sources, finite replays, scoped claims and closure bindings')
+    receipt_path = ROOT / 'docs/research/community-batch932-integration.json'
+    if receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        for name, digest in receipt['receipts'].items():
+            require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest,
+                    'Changed batch932 evidence: ' + name)
+        folder = ROOT / 'research/community-batch932-audit'
+        coverage = json.loads((folder / 'CONTENT-COVERAGE.json').read_text())['pull_requests']
+        decisions = json.loads((folder / 'DISPOSITIONS.json').read_text())['pull_requests']
+        require(set(coverage) == set(receipt['reviewed_heads']) == {str(d['number']) for d in decisions},
+                'Batch932 review scope differs')
+        for decision in decisions:
+            number = decision['number']; row = coverage[str(number)]
+            require(row['head'] == decision['reviewed_head'] == receipt['reviewed_heads'][str(number)],
+                    'Batch932 coverage head differs')
+            require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
+                    'Batch932 changed-file inventory incomplete')
+            check_review_completion(actual[number], decision)
+            for item in row['files']:
+                require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
+                if item['action'] == 'pending':
+                    require(not decision['review_completion']['changed_file_coverage'], 'Incomplete review')
+                if item.get('integrated_sha256'):
+                    require(hashlib.sha256((ROOT / item['integrated_path']).read_bytes()).hexdigest()
+                            == item['integrated_sha256'], 'Changed integrated file: ' + item['integrated_path'])
+                if item['action'] != 'retained':
+                    require(bool(item.get('reason')), 'Missing scope or adaptation reason')
+        print('PASS batch932 batch: reviewed sources, finite replays, scoped claims and closure bindings')
+    receipt_path = ROOT / 'docs/research/community-batch952-integration.json'
+    if receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        for name, digest in receipt['receipts'].items():
+            require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest,
+                    'Changed batch952 evidence: ' + name)
+        folder = ROOT / 'research/community-batch952-audit'
+        coverage = json.loads((folder / 'CONTENT-COVERAGE.json').read_text())['pull_requests']
+        decisions = json.loads((folder / 'DISPOSITIONS.json').read_text())['pull_requests']
+        require(set(coverage) == set(receipt['reviewed_heads']) == {str(d['number']) for d in decisions},
+                'Batch952 review scope differs')
+        for decision in decisions:
+            number = decision['number']; row = coverage[str(number)]
+            require(row['head'] == decision['reviewed_head'] == receipt['reviewed_heads'][str(number)],
+                    'Batch952 coverage head differs')
+            require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
+                    'Batch952 changed-file inventory incomplete')
+            check_review_completion(actual[number], decision)
+            for item in row['files']:
+                require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
+                if item['action'] == 'pending':
+                    require(not decision['review_completion']['changed_file_coverage'], 'Incomplete review')
+                if item.get('integrated_sha256'):
+                    require(hashlib.sha256((ROOT / item['integrated_path']).read_bytes()).hexdigest()
+                            == item['integrated_sha256'], 'Changed integrated file: ' + item['integrated_path'])
+                if item['action'] != 'retained':
+                    require(bool(item.get('reason')), 'Missing scope or adaptation reason')
+        print('PASS batch952 batch: reviewed sources, finite replays, scoped claims and closure bindings')
+    receipt_path = ROOT / 'docs/research/community-batch970-integration.json'
+    if receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        for name, digest in receipt['receipts'].items():
+            require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest,
+                    'Changed batch970 evidence: ' + name)
+        folder = ROOT / 'research/community-batch970-audit'
+        coverage = json.loads((folder / 'CONTENT-COVERAGE.json').read_text())['pull_requests']
+        decisions = json.loads((folder / 'DISPOSITIONS.json').read_text())['pull_requests']
+        require(set(coverage) == set(receipt['reviewed_heads']) == {str(d['number']) for d in decisions},
+                'Batch970 review scope differs')
+        for decision in decisions:
+            number = decision['number']; row = coverage[str(number)]
+            require(row['head'] == decision['reviewed_head'] == receipt['reviewed_heads'][str(number)],
+                    'Batch970 coverage head differs')
+            require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
+                    'Batch970 changed-file inventory incomplete')
+            check_review_completion(actual[number], decision)
+            for item in row['files']:
+                require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
+                if item['action'] == 'pending':
+                    require(not decision['review_completion']['changed_file_coverage'], 'Incomplete review')
+                if item.get('integrated_sha256'):
+                    require(hashlib.sha256((ROOT / item['integrated_path']).read_bytes()).hexdigest()
+                            == item['integrated_sha256'], 'Changed integrated file: ' + item['integrated_path'])
+                if item['action'] != 'retained':
+                    require(bool(item.get('reason')), 'Missing scope or adaptation reason')
+        companion_path = folder / 'COMPANION-REVIEWS.json'
+        if companion_path.exists():
+            for companion in json.loads(companion_path.read_text())['pull_requests']:
+                item = actual[companion['number']]
+                check_companion_review(item, companion, family_decisions.get(companion['number']))
+        print('PASS batch970 batch: reviewed sources, finite replays, scoped claims and closure bindings')
+    receipt_path = ROOT / 'docs/research/community-batch1047-integration.json'
+    if receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        for name, digest in receipt['receipts'].items():
+            require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest,
+                    'Changed batch1047 evidence: ' + name)
+        folder = ROOT / 'research/community-batch1047-audit'
+        coverage = json.loads((folder / 'CONTENT-COVERAGE.json').read_text())['pull_requests']
+        decisions = json.loads((folder / 'DISPOSITIONS.json').read_text())['pull_requests']
+        require(set(coverage) == set(receipt['reviewed_heads']) == {str(d['number']) for d in decisions},
+                'Batch1047 review scope differs')
+        for decision in decisions:
+            number = decision['number']; row = coverage[str(number)]
+            require(row['head'] == decision['reviewed_head'] == receipt['reviewed_heads'][str(number)],
+                    'Batch1047 coverage head differs')
+            require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
+                    'Batch1047 changed-file inventory incomplete')
+            check_review_completion(actual[number], decision)
+            for item in row['files']:
+                require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
+                if item['action'] == 'pending':
+                    require(not decision['review_completion']['changed_file_coverage'], 'Incomplete review')
+                if item.get('integrated_sha256'):
+                    check_batch1047_file(item)
+                if item['action'] != 'retained':
+                    require(bool(item.get('reason')), 'Missing scope or adaptation reason')
+        print('PASS batch1047: scoped source coverage and review completion')
+    receipt_path = ROOT / 'docs/research/community-batch1099-integration.json'
+    if receipt_path.exists():
+        receipt = json.loads(receipt_path.read_text())
+        for name, digest in receipt['receipts'].items():
+            require(hashlib.sha256((ROOT / name).read_bytes()).hexdigest() == digest,
+                    'Changed batch1099 evidence: ' + name)
+        folder = ROOT / 'research/community-batch1099-audit'
+        coverage = json.loads((folder / 'CONTENT-COVERAGE.json').read_text())['pull_requests']
+        decisions = json.loads((folder / 'DISPOSITIONS.json').read_text())['pull_requests']
+        require(set(coverage) == set(receipt['reviewed_heads']) == {str(d['number']) for d in decisions},
+                'Batch1099 review scope differs')
+        for decision in decisions:
+            number = decision['number']; row = coverage[str(number)]
+            require(row['head'] == decision['reviewed_head'] == receipt['reviewed_heads'][str(number)],
+                    'Batch1099 coverage head differs')
+            require(len(row['files']) == row['changed_files'] == len({f['source_path'] for f in row['files']}),
+                    'Batch1099 changed-file inventory incomplete')
+            check_review_completion(actual[number], decision)
+            for item in row['files']:
+                require(item['action'] in {'retained', 'adapted', 'excluded', 'pending'}, 'Unknown file action')
+                if item['action'] == 'pending':
+                    require(not decision['review_completion']['changed_file_coverage'], 'Incomplete review')
+                if item.get('integrated_sha256'):
+                    check_batch1099_file(item)
+                if item['action'] != 'retained':
+                    require(bool(item.get('reason')), 'Missing scope or adaptation reason')
+        print('PASS batch1099: scoped source coverage and review completion')
+    import runpy
+    reconciliation100 = ROOT / 'research/pr-reconciliation100-20261013/verify.py'
+    if reconciliation100.exists():
+        runpy.run_path(str(reconciliation100), run_name='__main__')
+    historical_five = ROOT / 'research/community-historical-five-audit/replay.py'
+    if historical_five.exists():
+        runpy.run_path(str(historical_five), run_name='__main__')
+    reconciliation92 = ROOT / 'research/community-reconciliation92-audit/verify.py'
+    if reconciliation92.exists():
+        runpy.run_path(str(reconciliation92), run_name='__main__')
+    third100 = ROOT / 'research/community-reconciliation-third100-audit/verify.py'
+    if third100.exists():
+        runpy.run_path(str(third100), run_name='__main__')
+    fourth100 = ROOT / 'research/community-reconciliation-fourth100-audit/verify.py'
+    if fourth100.exists():
+        runpy.run_path(str(fourth100), run_name='__main__')
+    next100 = ROOT / 'research/community-reconciliation-next100-audit/verify.py'
+    if next100.exists():
+        runpy.run_path(str(next100), run_name='__main__')
     print(f'PASS immutable snapshot plus explicit family rounds: {len(actual)} PRs, attributed heads, evidence pins and unresolved questions')
 
 

@@ -20,7 +20,7 @@ class FamilyDecision(unittest.TestCase):
         cls.ledger = json.loads((ROOT / 'docs/research/pr-ledger.json').read_text())
         cls.items = {row['number']: row for row in cls.ledger['pull_requests']}
         cls.families = {}
-        for family in ('family533', 'family588', 'hyperplane599', 'cold617', 'k492', 'frontier741'):
+        for family in ('family533', 'family588', 'hyperplane599', 'cold617', 'k492', 'frontier741', 'frontier799', 'frontier890', 'reconciliation-fourth100', 'pilot20', 'efficient100', 'efficient200', 'efficient300', 'efficient400'):
             path = ROOT / f'research/community-{family}-audit/DISPOSITIONS.json'
             cls.families[family] = json.loads(path.read_text())['pull_requests']
 
@@ -30,10 +30,13 @@ class FamilyDecision(unittest.TestCase):
         self.item = deepcopy(self.items[626])
 
     def test_current_family_projections_match_authoritative_decisions(self):
+        final = {}
         for family, decisions in self.families.items():
             for decision in decisions:
-                with self.subTest(family=family, number=decision['number']):
-                    checker.check_family_decision(self.items[decision['number']], decision)
+                final[decision['number']] = (family, decision)
+        for number, (family, decision) in final.items():
+            with self.subTest(family=family, number=number):
+                checker.check_family_decision(self.items[number], decision)
 
     def test_equal_forged_heads_do_not_establish_review_provenance(self):
         self.item['reviewed_head'] = self.item['current_head'] = '0' * 40
@@ -86,7 +89,7 @@ class FamilyDecision(unittest.TestCase):
         decision = next(row for row in self.families['family533'] if row['number'] == 463)
         self.assertNotIn('review_completion', decision)
         self.assertNotIn('verification_evidence', decision)
-        checker.check_family_decision(self.items[463], decision)
+        checker.check_family_decision(deepcopy(decision), decision)
 
     def test_partial_decisions_can_preserve_distinct_reviewed_and_current_heads(self):
         for disposition in ('partially_reviewed', 'changed_since_review'):

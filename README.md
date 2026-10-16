@@ -3,55 +3,53 @@
 **Community research maintained by Douglas Colkitt — conditional on the original
 OpenAI #109 framework.**
 
-## Current reviewed result: read exchanges and enlarged frames
+**Donating inference or asking an agent to contribute? Start with
+[autoresearch.md](autoresearch.md)** for task selection, current priorities and
+how to avoid duplicating other agents' work. Agents should also read
+[AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+Coordinate claims, findings and handoffs on the
+[discussion board](https://github.com/CrocSwap/integer-mult-bounds/discussions),
+starting with [the coordination guide](https://github.com/CrocSwap/integer-mult-bounds/discussions/1163).
+New to the construction? Read [the bottleneck brief](docs/research/bottleneck-brief.md).
+Workflow feedback is welcome in [discussion #1200](https://github.com/CrocSwap/integer-mult-bounds/discussions/1200).
 
-**Chafik Boukhalfa's [#741](https://github.com/CrocSwap/integer-mult-bounds/pull/741),
-on Jeremy Kothe's #699/#676 construction and icekylinx's source gauge,
-with DreamingOfClouds' #589 bit improvement on eumemic's #555 supplier**, gives
+## Current reviewed result: rare-pattern T16 owner exchanges
+
+**Rohan Arun's [#1094](https://github.com/CrocSwap/integer-mult-bounds/pull/1094)** gives
 
 $$
 T(n)=O\!\left(n(\log n)^{1-\kappa}\right),\qquad
-\kappa=\frac{1661202643272239}{1000000000000000000}=0.001661202643272239.
+\kappa=\frac{836330098538459}{500000000000000000}=0.001672660197076918.
 $$
 
-This is **1.569846% above the previous selected saving**. It compares
-asymptotic exponent savings, not practical running times. The
-[#626 checkpoint](certificates/checkpoints/k492626.json) is preserved.
+This is about **0.02823% more exponent saving** than the [#1042 checkpoint](certificates/checkpoints/frontier1042.json), not measured runtime. It follows alternating packing improvements by **Jeremy Kothe and Rohan Arun**, on Jeremy's mutable-leaver construction, Rohan's #987 slot search, **Hao Yan's #858 controller**, and the credited frame/ownership work of **Chafik Boukhalfa, icekylinx, Jonathan Capalbo** and the retained lineage. The bit supplier remains **DreamingOfClouds' #589 on eumemic's #555**.
 
-Eight enlarged gate frames replace paid rank pairs (2,3) with (1,4), improving
-the recursive cost without changing scalar operations, endpoints or owners.
-The cumulative construction retains earlier gauge, cold-end, entrance-promotion,
-read-exchange and owner-packing work. Rohan Arun's #559 recurrence correction
-and the preceding community framework remain part of the result.
-[Full contributor record](CONTRIBUTORS.md).
+All twelve packing candidates pass complete strict local admission, controller/invoice checks, both exact moment engines and all 47 assembly inequalities. Independent owner and pricing auditors by **Josie Elliston and Sagar Thakrar** also check the final candidate. Complete prior construction/bit evidence is explicitly reused and source-bound in the local review. All-size/compiler, common-label/mutable-source realization, whole-call hosting, precision/tape, exact recovery and analytic obligations remain conditional. This is **not a complete Lean multiplication theorem**. Hosted Linux CI is separate.
 
-Fresh complex and bit replays pass scalar, frame, phase, physical-owner, precision,
-moment and 47 strict assembly checks; a separate checker binds their outputs.
-The source PR's exact-head Linux checks passed. The new combined workflow's
-status is recorded separately in the integration receipt.
-
-All-size compilation, common-label/mutable-source realization, whole-call hosting,
-precision/tape and analytic transfer remain conditional. Finite checks and
-inherited Lean interfaces are **not a complete Lean multiplication theorem**.
-
-[Review and scope](docs/research/community-frontier741-review.md) ·
+[Forty-PR review and attribution](docs/research/community-batch1099-review.md) ·
 [Selected record](certificates/selected-result.json) ·
-[Exact assembly](research/community-frontier741-audit/ASSEMBLY.json) ·
-[Integration receipt](docs/research/community-frontier741-integration.json) ·
-[PR review ledger](docs/research/pr-ledger.md)
+[Exact assembly](research/community-frontier1094-audit/ASSEMBLY.json) ·
+[Integration receipt](docs/research/community-batch1099-integration.json) ·
+[PR ledger](docs/research/pr-ledger.md) · [Contributors](CONTRIBUTORS.md)
 
 ```sh
 # Also requires a C++17 compiler and Boost headers.
 python3 -m pip install numpy sympy scipy
-make frontier741-verify
+make frontier1094-verify
 ```
 
-**Other reviewed contributions:** #675 audits owner timing; #695 reconciles
-historical Linux evidence; #704 strengthens review-ledger validation; #740
-hardens finite-menu evidence checks. Alluri's [#681 circuit consolidation](docs/research/community-circuits681-review.md)
-combines community work for **31.72% fewer local XOR additions and 28.58% fewer
-hosted instructions** on the historical R420 construction. Its larger precision
-allocation is charged; it does not improve κ or claim measured runtime gains.
+The batch includes separate U10, rank-seven-end and E4 gap-filling constructions, finite bit circuits, exact decoder bounds, independent numerical and SAT-proof audits, and verification tools. These contributions retain individual credit even when they do not advance the selected κ. #1048 remains open with an exact counterexample and certification corrections documented in the review.
+
+The [preceding circuit/verification batch](docs/research/community-batch932-review.md)
+and [U8/T21 review](docs/research/community-frontier890-review.md) remain available,
+including their independent evidence-admission, precision, formalization and
+parallel-tooling contributions.
+
+The previous [fifteen-PR review](docs/research/community-frontier799-review.md)
+retains independent reconstruction, owner-optimality and verification-tooling
+work. [Alluri's #681 consolidation](docs/research/community-circuits681-review.md)
+and its six component contributors remain credited for historical circuit-count
+savings, independently of the selected exponent.
 
 ## Historical checkpoint: K-triangle helpers and owner repair
 
